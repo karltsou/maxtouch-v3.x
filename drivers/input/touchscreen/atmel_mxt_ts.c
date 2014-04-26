@@ -3014,9 +3014,12 @@ static int mxt_handle_pdata(struct device *dev, struct mxt_data *data)
 		return -ENOMEM;
 	}
 
-	error = mxt_parse_dt(dev, data->pdata);
-	if (error)
-		return error;
+	/* Check device tree node */
+	if (data->client->dev.of_node) {
+		error = mxt_parse_dt(dev, data->pdata);
+		if (error)
+			return error;
+	}
 
 	/* Set default parameters */
 	data->pdata->irqflags = IRQF_TRIGGER_FALLING;
