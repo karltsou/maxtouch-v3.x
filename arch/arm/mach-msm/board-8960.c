@@ -2166,7 +2166,7 @@ static const u8 mxt1386e_config_data_3d[] = {
 #define MXT_TS_GPIO_IRQ			11
 #define MXT_TS_LDO_EN_GPIO		50
 #define MXT_TS_RESET_GPIO		52
-
+#define MXT_I2C_ADDR			0x4D
 static void mxt_init_hw_liquid(void)
 {
 	int rc;
@@ -2280,7 +2280,7 @@ static struct mxt_platform_data mxt_platform_data_3d = {
 
 static struct i2c_board_info mxt_device_info[] __initdata = {
 	{
-		I2C_BOARD_INFO("atmel_mxt_ts", 0x5b),
+		I2C_BOARD_INFO("atmel_mxt_ts", MXT_I2C_ADDR),
 		.irq = MSM_GPIO_TO_INT(MXT_TS_GPIO_IRQ),
 	},
 };
@@ -2317,7 +2317,7 @@ static struct msm_i2c_platform_data msm8960_i2c_qup_gsbi4_pdata = {
 };
 
 static struct msm_i2c_platform_data msm8960_i2c_qup_gsbi3_pdata = {
-	.clk_freq = 100000,
+	.clk_freq = 400000,
 	.src_clk_rate = 24000000,
 };
 
