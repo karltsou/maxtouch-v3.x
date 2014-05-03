@@ -197,6 +197,22 @@ struct t9_range {
 #define DEBUG_MSG_MAX		200
 
 #define MXT_COORDS_ARR_SIZE     4
+
+/* Analog voltage @2.7 V */
+#define MXT_VTG_MIN_UV          2700000
+#define MXT_VTG_MAX_UV          3300000
+#define MXT_ACTIVE_LOAD_UA      15000
+#define MXT_LPM_LOAD_UA         10
+/* Digital voltage @1.8 V */
+#define MXT_VTG_DIG_MIN_UV      1800000
+#define MXT_VTG_DIG_MAX_UV      1800000
+#define MXT_ACTIVE_LOAD_DIG_UA  10000
+#define MXT_LPM_LOAD_DIG_UA     10
+
+#define MXT_I2C_VTG_MIN_UV      1800000
+#define MXT_I2C_VTG_MAX_UV      1800000
+#define MXT_I2C_LOAD_UA         10000
+#define MXT_I2C_LPM_LOAD_UA     10
 static int mxt_parse_dt(struct device *dev, struct mxt_platform_data *pdata);
 
 struct mxt_info {
@@ -257,6 +273,7 @@ struct mxt_data {
 	bool use_regulator;
 	struct regulator *reg_vdd;
 	struct regulator *reg_avdd;
+	struct regulator *reg_i2c;
 	char *fw_name;
 	char *cfg_name;
 
@@ -2124,17 +2141,28 @@ static int mxt_read_t9_resolution(struct mxt_data *data)
 
 static void mxt_regulator_enable(struct mxt_data *data)
 {
+	struct device *dev = &data->client->dev;
 	int error;
 
 	gpio_set_value(data->pdata->gpio_reset, 0);
 
-	error = regulator_enable(data->reg_vdd);
-	if (error)
-		return;
+	if (regulator_count_voltages(data->reg_vdd) > 0) {
+		error = regulator_set_voltage(data->reg_vdd,
+			MXT_VTG_DIG_MIN_UV, MXT_VTG_DIG_MAX_UV);
+		if (error) {
+			dev_err(dev, "Error %d regulator vdd set_vtg failed\n", error);
+			return;
+		}
+	}
 
-	error = regulator_enable(data->reg_avdd);
-	if (error)
-		return;
+	if (regulator_count_voltages(data->reg_avdd) > 0) {
+		error = regulator_set_voltage(data->reg_avdd,
+			MXT_VTG_MIN_UV,MXT_VTG_MAX_UV);
+		if (error) {
+			dev_err(dev, "Error %d regulator avdd set_vtg failed\n", error);
+			return;
+		}
+	}
 
 	msleep(MXT_REGULATOR_DELAY);
 	gpio_set_value(data->pdata->gpio_reset, 1);
@@ -2172,14 +2200,14 @@ static void mxt_probe_regulators(struct mxt_data *data)
 		goto fail;
 	}
 
-	data->reg_vdd = regulator_get(dev, "vdd");
+	data->reg_vdd = regulator_get(dev, "vdd_dig");
 	if (IS_ERR(data->reg_vdd)) {
 		error = PTR_ERR(data->reg_vdd);
 		dev_err(dev, "Error %d getting vdd regulator\n", error);
 		goto fail;
 	}
 
-	data->reg_avdd = regulator_get(dev, "avdd");
+	data->reg_avdd = regulator_get(dev, "vdd_ana");
 	if (IS_ERR(data->reg_vdd)) {
 		error = PTR_ERR(data->reg_vdd);
 		dev_err(dev, "Error %d getting avdd regulator\n", error);
@@ -2189,6 +2217,22 @@ static void mxt_probe_regulators(struct mxt_data *data)
 	data->use_regulator = true;
 	mxt_regulator_enable(data);
 
+	if (data->pdata->i2c_pull_up) {
+                data->reg_i2c = regulator_get(dev, "vcc_i2c");
+                if (IS_ERR(data->reg_i2c)) {
+                        error = PTR_ERR(data->reg_i2c);
+                        dev_err(dev, "Error %d getting i2c pull-up regulator\n", error);
+                        goto fail_release;
+                }
+                if (regulator_count_voltages(data->reg_i2c) > 0) {
+                        error = regulator_set_voltage(data->reg_i2c,
+                                MXT_I2C_VTG_MIN_UV, MXT_I2C_VTG_MAX_UV);
+                        if (error) {
+                                dev_err(dev, "Error %d i2c pull-up regulator set_vtg failed\n", error);
+                                goto fail_release;
+                        }
+                }
+        }
 	dev_dbg(dev, "Initialised regulators\n");
 	return;
 
@@ -3322,42 +3366,12 @@ static int mxt_get_dt_coords(struct device *dev, char *name,
 	return 0;
 }
 
-static int mxt_parse_config(struct device *dev, struct device_node *np,
-				struct mxt_config_info *info)
-{
-	struct property *prop;
-	u8 *temp_cfg;
-
-	prop = of_find_property(np, "atmel,config", &info->config_length);
-	if (!prop) {
-		dev_err(dev, "Looking up %s property in node %s failed",
-			"atmel,config", np->full_name);
-		return -ENODEV;
-	} else if (!info->config_length) {
-		dev_err(dev, "Invalid length of configuration data\n");
-		return -EINVAL;
-	}
-
-	temp_cfg = devm_kzalloc(dev,
-			info->config_length * sizeof(u8), GFP_KERNEL);
-	if (!temp_cfg) {
-		dev_err(dev, "Unable to allocate memory to store cfg\n");
-		return -ENOMEM;
-	}
-
-	memcpy(temp_cfg, prop->value, info->config_length);
-	info->config = temp_cfg;
-
-	return 0;
-}
 
 static int mxt_parse_dt(struct device *dev, struct mxt_platform_data *pdata)
 {
 	int rc;
-	struct mxt_config_info *info;
-	struct device_node *temp, *np = dev->of_node;
+	struct device_node *np = dev->of_node;
 	struct property *prop;
-	u32 temp_val;
 
 	rc = mxt_get_dt_coords(dev, "atmel,panel-coords", pdata);
 	if (rc)
@@ -3406,80 +3420,6 @@ static int mxt_parse_dt(struct device *dev, struct mxt_platform_data *pdata)
 	/* need calibration during wakeup? */
 	pdata->need_calibration = of_property_read_bool(np,
 					"atmel,need-calibration");
-	/* config array size */
-	pdata->config_array_size = 0;
-	temp = NULL;
-	while ((temp = of_get_next_child(np, temp)))
-		pdata->config_array_size++;
-
-	if (!pdata->config_array_size)
-		return 0;
-
-	info = devm_kzalloc(dev, pdata->config_array_size *
-				sizeof(struct mxt_config_info), GFP_KERNEL);
-	if (!info) {
-		dev_err(dev, "Unable to allocate memory\n");
-		return -ENOMEM;
-	}
-
-	rc = of_property_read_u32(np, "atmel,bl-addr", &temp_val);
-	if (rc && (rc != -EINVAL))
-		dev_err(dev, "Unable to read bootloader address\n");
-	else if (rc != -EINVAL)
-		pdata->bl_addr = (u8) temp_val;
-
-	pdata->config_array  = info;
-
-	for_each_child_of_node(np, temp) {
-		rc = of_property_read_string(temp, "atmel,fw-name",
-			&info->fw_name);
-		if (rc && (rc != -EINVAL)) {
-			dev_err(dev, "Unable to read fw name\n");
-			return rc;
-		}
-
-		rc = of_property_read_u32(temp, "atmel,family-id", &temp_val);
-		if (rc) {
-			dev_err(dev, "Unable to read family id\n");
-			return rc;
-		} else
-			info->family_id = (u8) temp_val;
-
-		rc  = of_property_read_u32(temp, "atmel,variant-id", &temp_val);
-		if (rc) {
-			dev_err(dev, "Unable to read variant id\n");
-			return rc;
-		} else
-			info->variant_id = (u8) temp_val;
-
-		rc = of_property_read_u32(temp, "atmel,version", &temp_val);
-		if (rc) {
-			dev_err(dev, "Unable to read controller version\n");
-			return rc;
-		} else
-			info->version = (u8) temp_val;
-
-		rc = of_property_read_u32(temp, "atmel,build", &temp_val);
-		if (rc) {
-			dev_err(dev, "Unable to read build id\n");
-			return rc;
-		} else
-			info->build = (u8) temp_val;
-
-		rc = of_property_read_u32(temp,
-					"atmel,bootldr-id", &temp_val);
-		if (rc && (rc != -EINVAL))
-			dev_err(dev, "Unable to read bootldr-id\n");
-		else if (rc != -EINVAL)
-			info->bootldr_id = (u8) temp_val;
-
-		rc = mxt_parse_config(dev, temp, info);
-		if (rc) {
-			dev_err(dev, "Unable to parse config data\n");
-			return rc;
-		}
-		info++;
-	}
 
 	return 0;
 }

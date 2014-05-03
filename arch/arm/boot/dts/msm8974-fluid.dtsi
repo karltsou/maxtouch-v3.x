@@ -67,69 +67,6 @@
 			atmel,display-coords = <0 0 720 1280>;
 			atmel,i2c-pull-up;
 			atmel,no-force-update;
-			atmel,cfg_1 {
-				atmel,fw-name = "atmel_8974_fluid_v1_0_AA.hex";
-				atmel,family-id = <0x82>;
-				atmel,variant-id = <0x19>;
-				atmel,version = <0x10>;
-				atmel,build = <0xaa>;
-				atmel,config = [
-					/* Object 6, Instance = 0 */
-					00 00 00 00 00 00
-					/* Object 38, Instance = 0 */
-					15 01 00 03 0A 0C 00 00
-					/* Object 7, Instance = 0 */
-					20 08 32 03
-					/* Object 8, Instance = 0 */
-					0F 00 0A 0A 00 00 0A 0A 00 00
-					/* Object 9, Instance = 0 */
-					83 00 00 18 0E 00 70 46 02 01
-					00 0A 03 31 04 05 0A 0A 90 05
-					F8 02 05 F1 F1 0F 00 00 08 2D
-					12 06 00 00 00 01
-					/* Object 15, Instance = 0 */
-					00 00 00 00 00 00 00 00 00 00
-					00
-					/* Object 18, Instance = 0 */
-					00 00
-					/* Object 19, Instance = 0 */
-					00 00 00 00 00 00
-					/* Object 23, Instance = 0 */
-					00 00 00 00 00 00 00 00 00 00
-					00 00 00 00 00
-					/* Object 25, Instance = 0 */
-					00 00 00 00 00 00 00 00 00 00
-					00 00 00 00 00
-					/* Object 40, Instance = 0 */
-					00 00 00 00 00
-					/* Object 42, Instance = 0 */
-					33 1E 19 10 80 00 00 00 FF 00
-					/* Object 46, Instance = 0 */
-					00 00 10 10 00 00 03 00 00 01
-					/* Object 47, Instance = 0 */
-					08 0A 28 0A 02 0A 00 8C 00 20
-					00 00 00
-					/* Object 55, Instance = 0 */
-					00 00 00 00 00 00
-					/* Object 56, Instance = 0 */
-					00 00 00 18 05 05 05 05 05 05
-					05 05 05 05 05 05 05 05 05 05
-					05 05 05 05 05 05 05 05 00 00
-					00 00 00 00 00 00 00 00 00 00
-					00 00
-					/* Object 57, Instance = 0 */
-					00 00 00
-					/* Object 61, Instance = 0 */
-					00 00 00 00 00
-					/* Object 62, Instance = 0 */
-					01 2A 00 16 00 00 00 00 0B 01
-					02 03 04 08 00 00 08 10 18 05
-					00 0A 05 05 50 14 19 34 1A 7F
-					00 00 00 00 00 00 00 00 00 30
-					05 02 00 01 00 05 00 00 00 00
-					00 00 00 00
-					];
-			};
 		};
 	};
 

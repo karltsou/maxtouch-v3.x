@@ -2166,7 +2166,7 @@ static const u8 mxt1386e_config_data_3d[] = {
 #define MXT_TS_GPIO_IRQ			11
 #define MXT_TS_LDO_EN_GPIO		50
 #define MXT_TS_RESET_GPIO		52
-#define MXT_I2C_ADDR			0x4D
+#define MXT_I2C_ADDR			0x4A
 static void mxt_init_hw_liquid(void)
 {
 	int rc;
