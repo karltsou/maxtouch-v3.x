@@ -689,6 +689,7 @@ void mdss_mdp_clk_ctrl(int enable, int isr)
 		}
 	}
 
+	MDSS_XLOG(mdp_clk_cnt, changed, enable, current->pid);
 	pr_debug("%s: clk_cnt=%d changed=%d enable=%d\n",
 			__func__, mdp_clk_cnt, changed, enable);
 
@@ -792,6 +793,8 @@ int mdss_iommu_attach(struct mdss_data_type *mdata)
 	int i;
 
 	mutex_lock(&mdp_iommu_lock);
+	MDSS_XLOG(mdata->iommu_attached);
+
 	if (mdata->iommu_attached) {
 		pr_debug("mdp iommu already attached\n");
 		mutex_unlock(&mdp_iommu_lock);
@@ -823,6 +826,8 @@ int mdss_iommu_dettach(struct mdss_data_type *mdata)
 	int i;
 
 	mutex_lock(&mdp_iommu_lock);
+	MDSS_XLOG(mdata->iommu_attached);
+
 	if (!mdata->iommu_attached) {
 		pr_debug("mdp iommu already dettached\n");
 		mutex_unlock(&mdp_iommu_lock);
@@ -965,7 +970,7 @@ static int mdss_mdp_debug_init(struct mdss_data_type *mdata)
 	if (rc)
 		return rc;
 
-	mdss_debug_register_base(NULL, mdata->mdp_base, mdata->mdp_reg_size);
+	mdss_debug_register_base("mdp", mdata->mdp_base, mdata->mdp_reg_size);
 
 	return 0;
 }
@@ -2216,6 +2221,8 @@ static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 		"qcom,mdss-has-decimation");
 	mdata->has_wfd_blk = of_property_read_bool(pdev->dev.of_node,
 		"qcom,mdss-has-wfd-blk");
+	mdata->has_no_lut_read = of_property_read_bool(pdev->dev.of_node,
+		"qcom,mdss-no-lut-read");
 	prop = of_find_property(pdev->dev.of_node, "batfet-supply", NULL);
 	mdata->batfet_required = prop ? true : false;
 	rc = of_property_read_u32(pdev->dev.of_node,
@@ -2242,6 +2249,17 @@ static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 	mdss_mdp_parse_dt_fudge_factors(pdev, "qcom,mdss-ib-factor",
 		&mdata->ib_factor);
 
+	/*
+	 * Set overlap ib value equal to ib by default. This value can
+	 * be tuned in device tree to be different from ib.
+	 * This factor apply when the max bandwidth per pipe
+	 * is the overlap BW.
+	 */
+	mdata->ib_factor_overlap.numer = mdata->ib_factor.numer;
+	mdata->ib_factor_overlap.denom = mdata->ib_factor.denom;
+	mdss_mdp_parse_dt_fudge_factors(pdev, "qcom,mdss-ib-factor-overlap",
+		&mdata->ib_factor_overlap);
+
 	mdata->clk_factor.numer = 1;
 	mdata->clk_factor.denom = 1;
 	mdss_mdp_parse_dt_fudge_factors(pdev, "qcom,mdss-clk-factor",
@@ -2256,6 +2274,23 @@ static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 			"qcom,max-bandwidth-high-kbps", &mdata->max_bw_high);
 	if (rc)
 		pr_debug("max bandwidth (high) property not specified\n");
+
+	mdata->nclk_lvl = mdss_mdp_parse_dt_prop_len(pdev,
+					"qcom,mdss-clk-levels");
+
+	if (mdata->nclk_lvl) {
+		mdata->clock_levels = kzalloc(sizeof(u32) * mdata->nclk_lvl,
+							GFP_KERNEL);
+		if (!mdata->clock_levels) {
+			pr_err("no mem assigned for mdata clock_levels\n");
+			return -ENOMEM;
+		}
+
+		rc = mdss_mdp_parse_dt_handler(pdev, "qcom,mdss-clk-levels",
+			mdata->clock_levels, mdata->nclk_lvl);
+		if (rc)
+			pr_debug("clock levels not found\n");
+	}
 
 	return 0;
 }

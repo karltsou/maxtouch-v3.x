@@ -1146,14 +1146,18 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 	else
 		ret = mdss_mdp_display_commit(mdp5_data->ctl, NULL);
 
+	atomic_set(&mfd->kickoff_pending, 0);
+	wake_up_all(&mfd->kickoff_wait_q);
 	mutex_unlock(&mfd->lock);
 
 	if (IS_ERR_VALUE(ret))
 		goto commit_fail;
 
+	mutex_unlock(&mdp5_data->ov_lock);
 	mdss_mdp_overlay_update_pm(mdp5_data);
 
 	ret = mdss_mdp_display_wait4comp(mdp5_data->ctl);
+	mutex_lock(&mdp5_data->ov_lock);
 
 	if (ret == 0) {
 		mutex_lock(&mfd->lock);
@@ -1593,6 +1597,7 @@ static void mdss_mdp_overlay_pan_display(struct msm_fb_data_type *mfd,
 		return;
 	}
 
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
 	bpp = fbi->var.bits_per_pixel / 8;
 	offset = fbi->var.xoffset * bpp +
 		 fbi->var.yoffset * fbi->fix.line_length;
@@ -1665,6 +1670,7 @@ static void mdss_mdp_overlay_pan_display(struct msm_fb_data_type *mfd,
 	    (fbi->var.activate & FB_ACTIVATE_FORCE))
 		mfd->mdp.kickoff_fnc(mfd, NULL);
 
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
 	return;
 
 attach_err:
@@ -1672,9 +1678,40 @@ attach_err:
 	mdss_mdp_overlay_unset(mfd, pipe->ndx);
 	if (pipe_ndx)
 		pipe_ndx[0] = INVALID_PIPE_INDEX;
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
 	return;
 pan_display_error:
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
 	mutex_unlock(&mdp5_data->ov_lock);
+}
+
+static void remove_underrun_vsync_handler(struct work_struct *work)
+{
+	int rc;
+	struct mdss_mdp_ctl *ctl =
+		container_of(work, typeof(*ctl), remove_underrun_handler);
+
+	if (!ctl || !ctl->remove_vsync_handler) {
+		pr_err("ctl or vsync handler is NULL\n");
+		return;
+	}
+
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
+	rc = ctl->remove_vsync_handler(ctl,
+			&ctl->recover_underrun_handler);
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
+}
+
+static void mdss_mdp_recover_underrun_handler(struct mdss_mdp_ctl *ctl,
+						ktime_t t)
+{
+	if (!ctl) {
+		pr_err("ctl is NULL\n");
+		return;
+	}
+
+	mdss_mdp_ctl_reset(ctl);
+	schedule_work(&ctl->remove_underrun_handler);
 }
 
 /* function is called in irq context should have minimum processing */
@@ -2642,6 +2679,13 @@ static struct mdss_mdp_ctl *__mdss_mdp_overlay_ctl_init(
 					mdss_mdp_overlay_handle_vsync;
 	ctl->vsync_handler.cmd_post_flush = false;
 
+	ctl->recover_underrun_handler.vsync_handler =
+			mdss_mdp_recover_underrun_handler;
+	ctl->recover_underrun_handler.cmd_post_flush = false;
+
+	INIT_WORK(&ctl->remove_underrun_handler,
+				remove_underrun_vsync_handler);
+
 	if (mfd->split_display && pdata->next) {
 		/* enable split display */
 		rc = mdss_mdp_ctl_split_display_setup(ctl, pdata->next);
@@ -3100,6 +3144,7 @@ int mdss_mdp_overlay_init(struct msm_fb_data_type *mfd)
 		goto init_fail;
 	}
 	mfd->mdp.private1 = mdp5_data;
+	mfd->wait_for_kickoff = true;
 
 	rc = mdss_mdp_overlay_fb_parse_dt(mfd);
 	if (rc)
