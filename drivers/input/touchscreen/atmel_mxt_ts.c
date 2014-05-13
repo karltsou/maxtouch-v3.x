@@ -2144,7 +2144,11 @@ static void mxt_regulator_enable(struct mxt_data *data)
 	struct device *dev = &data->client->dev;
 	int error;
 
-	gpio_set_value(data->pdata->gpio_reset, 0);
+	error = gpio_direction_output(data->pdata->reset_gpio, 0);
+	if (error) {
+		dev_err(dev, "Error %d regulator reset set to low\n",error);
+		return;
+	}
 
 	if (regulator_count_voltages(data->reg_vdd) > 0) {
 		error = regulator_set_voltage(data->reg_vdd,
@@ -2165,7 +2169,11 @@ static void mxt_regulator_enable(struct mxt_data *data)
 	}
 
 	msleep(MXT_REGULATOR_DELAY);
-	gpio_set_value(data->pdata->gpio_reset, 1);
+	error = gpio_direction_output(data->pdata->reset_gpio, 1);
+	if (error) {
+		dev_err(dev, "Error %d regulator reset set to hi\n",error);
+		return;
+	}
 	msleep(MXT_CHG_DELAY);
 
 retry_wait:
@@ -2195,7 +2203,7 @@ static void mxt_probe_regulators(struct mxt_data *data)
 	 * must be kept low until some time after regulators come up to
 	 * voltage
 	 */
-	if (!data->pdata->gpio_reset) {
+	if (!data->pdata->reset_gpio) {
 		dev_warn(dev, "Must have reset GPIO to use regulator support\n");
 		goto fail;
 	}
@@ -2208,8 +2216,8 @@ static void mxt_probe_regulators(struct mxt_data *data)
 	}
 
 	data->reg_avdd = regulator_get(dev, "vdd_ana");
-	if (IS_ERR(data->reg_vdd)) {
-		error = PTR_ERR(data->reg_vdd);
+	if (IS_ERR(data->reg_avdd)) {
+		error = PTR_ERR(data->reg_avdd);
 		dev_err(dev, "Error %d getting avdd regulator\n", error);
 		goto fail_release;
 	}
@@ -3200,7 +3208,6 @@ static int mxt_probe(struct i2c_client *client,
 		 client->adapter->nr, client->addr);
 
 	data->client = client;
-	data->irq = client->irq;
 	i2c_set_clientdata(client, data);
 
 	error = mxt_handle_pdata(&client->dev, data);
@@ -3212,12 +3219,43 @@ static int mxt_probe(struct i2c_client *client,
 	init_completion(&data->crc_completion);
 	mutex_init(&data->debug_msg_lock);
 
+	if (gpio_is_valid(data->pdata->irq_gpio)) {
+		/* configure touchscreen irq gpio */
+		error = gpio_request(data->pdata->irq_gpio, "mxt_irq_gpio");
+		if (error) {
+			dev_err(&client->dev, "unable to request gpio [%d]\n",
+			data->pdata->irq_gpio);
+			goto err_free_pdata;
+		}
+		error = gpio_direction_input(data->pdata->irq_gpio);
+		if (error) {
+			dev_err(&client->dev,
+			"unable to set direction for gpio [%d]\n",
+			data->pdata->irq_gpio);
+			goto err_free_pdata;
+		}
+		data->irq = client->irq = gpio_to_irq(data->pdata->irq_gpio);
+	} else {
+		dev_err(&client->dev, "irq gpio not provided\n");
+		goto err_free_pdata;
+	}
+
 	error = request_threaded_irq(data->irq, NULL, mxt_interrupt,
 				     data->pdata->irqflags | IRQF_ONESHOT,
 				     client->name, data);
 	if (error) {
 		dev_err(&client->dev, "Failed to register interrupt\n");
 		goto err_free_pdata;
+	}
+
+	if (gpio_is_valid(data->pdata->reset_gpio)) {
+		/* configure touchscreen reset out gpio */
+		error = gpio_request(data->pdata->reset_gpio, "mxt_reset_gpio");
+		if (error) {
+			dev_err(&client->dev, "unable to request gpio [%d]\n",
+			data->pdata->reset_gpio);
+			goto err_free_pdata;
+		}
 	}
 
 	mxt_probe_regulators(data);
