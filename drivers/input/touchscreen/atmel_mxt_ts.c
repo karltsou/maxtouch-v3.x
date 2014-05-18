@@ -27,6 +27,12 @@
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
 
+/* Firmware */
+#define MXT_FW_NAME             "maxtouch.fw"
+
+/* Config file */
+#define MXT_CONFIG_NAME         "maxtouch.cfg"
+
 /* Configuration file */
 #define MXT_CFG_MAGIC		"OBP_RAW V1"
 
@@ -3218,6 +3224,16 @@ static int mxt_probe(struct i2c_client *client,
 	init_completion(&data->reset_completion);
 	init_completion(&data->crc_completion);
 	mutex_init(&data->debug_msg_lock);
+
+	error = mxt_update_file_name(&client->dev, &data->fw_name, MXT_FW_NAME,
+					strlen(MXT_FW_NAME));
+	if (error)
+		goto err_free_mem;
+
+	error = mxt_update_file_name(&client->dev, &data->cfg_name,
+					MXT_CONFIG_NAME, strlen(MXT_CONFIG_NAME));
+	if (error)
+		goto err_free_mem;
 
 	if (gpio_is_valid(data->pdata->irq_gpio)) {
 		/* configure touchscreen irq gpio */
