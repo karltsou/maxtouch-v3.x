@@ -3056,7 +3056,7 @@ static void mxt_input_close(struct input_dev *dev)
 static int mxt_handle_pdata(struct device *dev, struct mxt_data *data)
 {
 	int error;
-
+	bool use_device_tree = dev->of_node;
         data->pdata = dev_get_platdata(&data->client->dev);
 
 	/* Use provided platform data if present */
@@ -3077,7 +3077,7 @@ static int mxt_handle_pdata(struct device *dev, struct mxt_data *data)
 	}
 
 	/* Check device tree node */
-	if (data->client->dev.of_node) {
+	if (use_device_tree) {
 		error = mxt_parse_dt(dev, data->pdata);
 		if (error)
 			return error;
