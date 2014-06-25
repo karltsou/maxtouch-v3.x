@@ -3084,7 +3084,7 @@ static int mxt_handle_pdata(struct device *dev, struct mxt_data *data)
 	}
 
 	/* Set default parameters */
-	data->pdata->irqflags = IRQF_TRIGGER_FALLING;
+	data->pdata->irqflags = IRQF_TRIGGER_LOW;
 
 	return 0;
 }
