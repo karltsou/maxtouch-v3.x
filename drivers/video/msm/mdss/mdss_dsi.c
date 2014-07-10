@@ -316,6 +316,7 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata)
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
+	mutex_lock(&ctrl_pdata->mutex);
 	panel_info = &ctrl_pdata->panel_data.panel_info;
 	pr_debug("%s+: ctrl=%p ndx=%d\n", __func__,
 				ctrl_pdata, ctrl_pdata->ndx);
@@ -333,6 +334,7 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata)
 
 	ret = mdss_dsi_panel_power_on(pdata, 0);
 	if (ret) {
+		mutex_unlock(&ctrl_pdata->mutex);
 		pr_err("%s: Panel power off failed\n", __func__);
 		return ret;
 	}
@@ -342,6 +344,7 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata)
 	    && (panel_info->new_fps != panel_info->mipi.frame_rate))
 		panel_info->mipi.frame_rate = panel_info->new_fps;
 
+	mutex_unlock(&ctrl_pdata->mutex);
 	pr_debug("%s-:\n", __func__);
 
 	return ret;
@@ -952,6 +955,15 @@ static int mdss_dsi_ctl_partial_update(struct mdss_panel_data *pdata)
 	return rc;
 }
 
+int mdss_dsi_register_recovery_handler(struct mdss_dsi_ctrl_pdata *ctrl,
+	struct mdss_panel_recovery *recovery)
+{
+	mutex_lock(&ctrl->mutex);
+	ctrl->recovery = recovery;
+	mutex_unlock(&ctrl->mutex);
+	return 0;
+}
+
 static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 				  int event, void *arg)
 {
@@ -1001,7 +1013,6 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		mdss_dsi_clk_req(ctrl_pdata, (int)arg);
 		break;
 	case MDSS_EVENT_DSI_CMDLIST_KOFF:
-		ctrl_pdata->recovery = (struct mdss_panel_recovery *)arg;
 		mdss_dsi_cmdlist_commit(ctrl_pdata, 1);
 		break;
 	case MDSS_EVENT_PANEL_UPDATE_FPS:
@@ -1022,6 +1033,10 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		break;
 	case MDSS_EVENT_DSI_ULPS_CTRL:
 		rc = mdss_dsi_ulps_config(ctrl_pdata, (int)arg);
+		break;
+	case MDSS_EVENT_REGISTER_RECOVERY_HANDLER:
+		rc = mdss_dsi_register_recovery_handler(ctrl_pdata,
+			(struct mdss_panel_recovery *)arg);
 		break;
 	default:
 		pr_debug("%s: unhandled event=%d\n", __func__, event);
