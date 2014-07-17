@@ -694,11 +694,12 @@ static int req_crypt_map(struct dm_target *ti, struct request *clone,
 	int error = DM_REQ_CRYPT_ERROR, copy_bio_sector_to_req = 0;
 	struct bio *bio_src = NULL;
 
-	if ((rq_data_dir(clone) != READ) &&
-			 (rq_data_dir(clone) != WRITE)) {
-		error = DM_REQ_CRYPT_ERROR;
-		DMERR("%s Unknown request\n", __func__);
-		goto submit_request;
+	if (rq_data_dir(clone) != READ) {
+		if (rq_data_dir(clone) != WRITE) {
+			error = DM_REQ_CRYPT_ERROR;
+			DMERR("%s Unknown request\n", __func__);
+			goto submit_request;
+		}
 	}
 
 	req_io = mempool_alloc(req_io_pool, GFP_NOWAIT);
